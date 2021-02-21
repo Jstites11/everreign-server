@@ -1,0 +1,9 @@
+<Project Sdk="Godot.NET.Sdk/3.2.3">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <RootNamespace>EverreignServer</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="LiteNetLib" Version="0.9.4" />
+  </ItemGroup>
+</Project>

@@ -12,9 +12,12 @@ public class Server : Node, INetEventListener
     // Declare member variables here. Examples:
     // private int a = 2;
     // private string b = "text";
-    private NetManager server;
-    private NetDataWriter writer;
+    public static NetManager server;
+    public static NetDataWriter writer;
     public static NetPacketProcessor packetProcessor;
+
+    // Dictionary that stores player info
+    public static Dictionary<uint, ServerPlayer> players = new Dictionary<uint, ServerPlayer>();
 
     [Export]
     private int port = 25565;
@@ -32,7 +35,6 @@ public class Server : Node, INetEventListener
 
     public void OnNetworkLatencyUpdate(NetPeer peer, int latency)
     {
-        throw new NotImplementedException();
     }
 
     public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, DeliveryMethod deliveryMethod)
@@ -53,9 +55,21 @@ public class Server : Node, INetEventListener
     public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
     {
         Console.WriteLine($"Player (pid: {(uint)peer.Id}) left the game");
+        ServerPlayer playerLeft;
+        if (players.TryGetValue(((uint)peer.Id), out playerLeft))
+        {
+            foreach (ServerPlayer player in players.Values)
+            {
+                if (player.state.pid != playerLeft.state.pid)
+                {
+                    SendPacket(new PlayerLeftGamePacket { pid = playerLeft.state.pid }, player.peer, DeliveryMethod.ReliableOrdered);
+                }
+            }
+            players.Remove((uint)peer.Id);
+        }
     }
 
-    public void SendPacket<T>(T packet, NetPeer peer, DeliveryMethod deliveryMethod) where T : class, new()
+    public static void SendPacket<T>(T packet, NetPeer peer, DeliveryMethod deliveryMethod) where T : class, new()
     {
         if (peer != null)
         {
@@ -78,7 +92,7 @@ public class Server : Node, INetEventListener
             AutoRecycle = true,
         };
         server.Start(port);
-        GD.Print("Starting Server! (type q to quit)");
+        GD.Print($"Starting Server on port {port}! (type q to quit)");
     }
 
     private void SetupPacketProcessor() 
@@ -86,9 +100,10 @@ public class Server : Node, INetEventListener
         packetProcessor = new NetPacketProcessor();
         packetProcessor.RegisterNestedType((w, v) => w.Put(v), reader => reader.GetVector2());
         packetProcessor.RegisterNestedType<PlayerState>();
-        //packetProcessor.SubscribeReusable<JoinPacket, NetPeer>(OnJoinReceived.Handle);
+        packetProcessor.SubscribeReusable<JoinPacket, NetPeer>(OnJoinReceived.Handle);
         packetProcessor.RegisterNestedType<ClientPlayer>();
         packetProcessor.SubscribeReusable<PlayerSendUpdatePacket, NetPeer>(OnPlayerUpdate.Handle);
+        packetProcessor.SubscribeReusable<LevelChangePacket, NetPeer>(OnLevelChange.Handle);
     }
 
     public override void _PhysicsProcess(float delta) 
@@ -100,7 +115,11 @@ public class Server : Node, INetEventListener
 
     public void HandlePlayerPositions() 
     {
-
+        PlayerState[] states = players.Values.Select(p => p.state).ToArray();
+        foreach (ServerPlayer player in players.Values)
+        {
+            SendPacket(new PlayerReceiveUpdatePacket { states = states }, player.peer, DeliveryMethod.Unreliable);
+        }
     }
 
 //  // Called every frame. 'delta' is the elapsed time since the previous frame.
